@@ -5,24 +5,18 @@ import { Pool } from "pg";
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "crypto";
+import dotenv from "dotenv";
+dotenv.config();
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-// Fallback DB config (from the Python file you shared)
-const FALLBACK_DB = {
-  host: "13.202.195.142",
-  port: 5533,
-  database: "storezeedev",
-  user: "storezeedev",
-  password: "sdejbsadjewb443i8bds",
-};
 
 const pool = new Pool({
-  host: process.env.DB_HOST || FALLBACK_DB.host,
-  port: parseInt(process.env.DB_PORT || String(FALLBACK_DB.port), 10),
-  database: process.env.DB_NAME || FALLBACK_DB.database,
-  user: process.env.DB_USER || FALLBACK_DB.user,
-  password: process.env.DB_PASSWORD || FALLBACK_DB.password,
+  host: process.env.host,
+  port: parseInt(process.env.port || "5533"),
+  database: process.env.database,
+  user: process.env.user,
+  password: process.env.password,
 });
 
 export async function registerRoutes(app: Express): Promise<Server> {
