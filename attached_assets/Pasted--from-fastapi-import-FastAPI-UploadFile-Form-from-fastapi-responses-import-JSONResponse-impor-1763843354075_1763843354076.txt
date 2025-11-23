@@ -1,0 +1,522 @@
+
+
+from fastapi import FastAPI, UploadFile, Form
+from fastapi.responses import JSONResponse
+import psycopg2
+from psycopg2.extras import RealDictCursor
+import uuid
+import os
+from datetime import datetime, timedelta
+import json
+import random
+
+app = FastAPI()
+
+# --------------------------------------------
+# PostgreSQL Config
+# --------------------------------------------
+DB_CONFIG = {
+    "host": "13.202.195.142",
+    "port": 5533,
+    "dbname": "storezeedev",
+    "user": "storezeedev",
+    "password": "sdejbsadjewb443i8bds"
+}
+
+
+# -------------------------------
+# DB Connection Helper
+# -------------------------------
+def get_db():
+    conn = psycopg2.connect(
+        host=DB_CONFIG["host"],
+        port=DB_CONFIG["port"],
+        database=DB_CONFIG["dbname"],
+        user=DB_CONFIG["user"],
+        password=DB_CONFIG["password"]
+    )
+    return conn
+
+
+# --------------------------------------------
+# SINGLE API: CREATE USER + DOCUMENT + BOOKING
+# --------------------------------------------
+@app.post("/create-everything")
+async def create_everything(
+    full_name: str = Form(...),
+    email: str = Form(...),
+    phone: str = Form(...),
+
+    file: UploadFile = Form(...),
+    luggage_pic: list[UploadFile] = Form(None),
+
+    storage_unit_id: str = Form(...),
+    booking_created_time: str = Form(...),
+    storage_booked_location: str = Form(...),
+    latitude: float = Form(...),
+    longitude: float = Form(...),
+    user_remark: str = Form(""),
+    luggage_time: int = Form(6),
+    addons: str = Form(""),
+    identification_number: str = Form("")
+):
+    try:
+        conn = get_db()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+
+        now = datetime.utcnow()
+
+        # ---------------------------------------------------------
+        # 1️⃣ Create User  (UUID OK here)
+        # ---------------------------------------------------------
+        user_id = str(uuid.uuid4())
+
+        cur.execute("""
+            INSERT INTO users_user (
+                password, last_login, is_superuser, id, created_at, updated_at,
+                full_name, email, phone, role, latitude, longitude, is_active,
+                is_staff, date_joined, profile_picture, is_verified, otp,
+                otp_generated_time, city_name,identification_number
+            )
+            VALUES (
+                %s,%s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s,%s,%s,%s
+            )
+        """, (
+            "", None, False, user_id, now, now,
+            full_name, email, phone, "user",
+            latitude, longitude, True,
+            False, now,
+            f"https://avatar.iran.liara.run/public/{random.randint(1,99)}.png",
+            True, None, now,
+            storage_booked_location,identification_number
+        ))
+        conn.commit()
+
+        # # ---------------------------------------------------------
+        # # 2️⃣ Upload user document
+        # # ---------------------------------------------------------
+        # doc_ext = file.filename.split(".")[-1]
+        # doc_key = f"documents/{user_id}/{uuid.uuid4().hex}.{doc_ext}"
+        # doc_path = f"uploads/{doc_key}"
+
+        # os.makedirs(os.path.dirname(doc_path), exist_ok=True)
+        # content = await file.read()
+
+        # with open(doc_path, "wb") as f:
+        #     f.write(content)
+
+        # document_url = f"/static/{doc_key}"
+
+        # cur.execute("""
+        #     INSERT INTO users_userdocument 
+        #     (original_name, imghippo_url, response_json, created_at, user_id)
+        #     VALUES (%s, %s, %s, %s, %s)
+        #     RETURNING id;
+        # """, (file.filename, document_url, json.dumps({}), now, user_id))
+
+        # document_id = cur.fetchone()["id"]
+        # conn.commit()
+
+        # ---------------------------------------------------------
+        # 3️⃣ Upload luggage images
+        # ---------------------------------------------------------
+        luggage_urls = []
+
+        if luggage_pic:
+            for pic in luggage_pic:
+                ext = pic.filename.split(".")[-1]
+                img_key = f"luggage/{user_id}/{uuid.uuid4().hex}.{ext}"
+                img_path = f"uploads/{img_key}"
+
+                os.makedirs(os.path.dirname(img_path), exist_ok=True)
+
+                img_bytes = await pic.read()
+                with open(img_path, "wb") as f:
+                    f.write(img_bytes)
+
+                luggage_urls.append(f"/static/{img_key}")
+
+        luggage_json = json.dumps(luggage_urls)
+
+        # ---------------------------------------------------------
+        # 4️⃣ Create Booking   (NO UUID for booking.id)
+        # ---------------------------------------------------------
+        booking_no = "BK" + uuid.uuid4().hex[:6].upper()
+
+        start_dt = datetime.fromisoformat(booking_created_time)
+        booking_end = start_dt + timedelta(hours=luggage_time)
+        str_id = str(uuid.uuid4())
+
+        cur.execute("""
+            INSERT INTO public.storage_bookings_storagebooking
+(id, created_at, updated_at, booking_id, booking_type, booking_created_time, booking_end_time, status, storage_image_url, storage_weight, is_active, 
+                    storage_latitude, storage_longitude, storage_booked_location, user_remark, assigned_saathi_id, storage_unit_id,
+                     user_booked_id, amount, luggage_rakshak_id, storage_location_updated_at, delivered_to_rakshak_at, luggage_images, pickup_confirmed_at,
+                     return_address, return_estimated_amount, return_lat, return_lng, return_preferred_time, return_requested_at, last_updated_by, amount_updated_by
+            )
+            VALUES (
+                %s,%s,%s,%s,%s,
+                %s,%s,%s,%s,%s,
+                %s,%s,%s,%s,
+                %s,%s,%s,%s,
+                %s,%s,%s,
+                %s,%s,%s,%s,
+                %s,%s,%s,%s,
+                %s,%s,%s
+            )
+            RETURNING id;
+        """, (
+            str_id,
+            now, now,
+            booking_no,
+            "Hourly",
+            start_dt,
+            booking_end,
+            "confirmed",
+            luggage_urls[0] if luggage_urls else "",
+            None,
+            True,
+            latitude,
+            longitude,
+            storage_booked_location,
+            user_remark,
+            None,
+            storage_unit_id,
+            user_id,
+            100,
+            None,
+            None,
+            None,
+            luggage_json,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            "System",
+            None
+        ))
+
+        booking_id = cur.fetchone()["id"]
+        conn.commit()
+
+        # ---------------------------------------------------------
+        # 5️⃣ Addons (NO uuid for id)
+        # ---------------------------------------------------------
+        if addons.strip():
+            
+            for addon in addons.split(","):
+                str_id = str(uuid.uuid4())
+                cur.execute("""
+                            INSERT INTO public.storage_bookings_bookingaddon
+(id,created_at, updated_at, addon_id, booking_id, addon_str_id, booking_str_id)
+VALUES(%s, %s, %s, %s, %s, %s, %s);
+                """, (str_id,now, now, None, None, addon, booking_id))
+
+            conn.commit()
+
+        cur.close()
+        conn.close()
+
+        return {
+            "success": True,
+            "message": "Everything created successfully!",
+            "data": {
+                "user_id": user_id,
+                "booking_id": booking_id,
+                "luggage_images": luggage_urls
+            }
+        }
+
+    except Exception as e:
+        return JSONResponse({"success": False, "error": str(e)}, status_code=500)
+
+
+# --------------------------------------------
+
+
+# API: GET USER BOOKINGS BY PHONE
+@app.get("/user-bookings/{phone}")
+def api_get_user_bookings(phone: str):
+    try:
+        conn = psycopg2.connect(
+            host=DB_CONFIG["host"],
+            port=DB_CONFIG["port"],
+            database=DB_CONFIG["dbname"],
+            user=DB_CONFIG["user"],
+            password=DB_CONFIG["password"]
+        )
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+
+        query = """
+            SELECT 
+              sb.id,
+              sb.user_booked_id,
+              sb.storage_unit_id,
+              sb.booking_id,
+              sb.booking_type,
+              sb.booking_created_time,
+              sb.booking_end_time,
+              sb.status,
+             
+              sb.amount,
+              sb.storage_latitude,
+              sb.storage_longitude,
+              sb.storage_booked_location,
+              sb.pickup_confirmed_at,
+              sb.storage_location_updated_at,
+              sb.user_remark,
+              
+              sb.last_updated_by,
+              sb.amount_updated_by,
+              sb.created_at,
+              sb.updated_at,
+              sb.payment_status,
+
+              -- User details
+              u.id as user_id,
+              u.full_name as user_full_name,
+              u.email as user_email,
+              u.phone as user_phone,
+
+              -- Storage unit details
+              su.id as storage_id,
+              su.title as storage_title,
+              su.description as storage_description,
+              su.address as storage_address,
+              su.city as storage_city,
+              su.state as storage_state,
+              su.pincode as storage_pincode,
+              su.latitude as storage_lat,
+              su.longitude as storage_lng,
+              su.rating as storage_rating,
+
+              -- Addon details
+              COALESCE(
+        json_agg(
+            jsonb_build_object(
+                'addon_id', sua.id,
+                'name', sua.name,
+                'price', sua.base_price
+            )
+        ) FILTER (WHERE sua.id IS NOT NULL),
+        '[]'
+    ) AS addons
+
+            FROM storage_bookings_storagebooking sb
+            INNER JOIN users_user u ON sb.user_booked_id = u.id
+            LEFT JOIN storage_units_storageunit su ON sb.storage_unit_id = su.id
+            LEFT JOIN saathi_saathi s ON sb.assigned_saathi_id = s.id
+            LEFT JOIN storage_bookings_bookingaddon sbb 
+    ON (
+        sbb.booking_id = sb.id 
+        OR sbb.booking_str_id = sb.id::text  -- matching by string id
+    )
+
+LEFT JOIN storage_units_addon sua 
+    ON (
+        sua.id = sbb.addon_id
+        OR sbb.addon_str_id = sua.id::text      -- matching by addon string id
+    )
+            
+            WHERE u.phone = %s
+            GROUP BY 
+    sb.id, sb.user_booked_id, sb.storage_unit_id, sb.booking_id, sb.booking_type,
+    sb.booking_created_time, sb.booking_end_time, sb.status, sb.amount,
+    sb.storage_latitude, sb.storage_longitude, sb.storage_booked_location,
+    sb.pickup_confirmed_at, sb.storage_location_updated_at, sb.user_remark,
+    sb.last_updated_by, sb.amount_updated_by, sb.created_at, sb.updated_at,
+    
+    u.id, u.full_name, u.email, u.phone,
+
+    su.id, su.title, su.description, su.address, su.city, su.state,
+    su.pincode, su.latitude, su.longitude, su.rating
+
+            ORDER BY sb.created_at DESC
+        """
+
+        cur.execute(query, (phone,))
+        data = cur.fetchall()
+
+        cur.close()
+        conn.close()
+
+        return {
+            "success": True,
+            "count": len(data),
+            "data": data
+        }
+
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+# --------------------------------------------
+
+# API: GET USER BOOKINGS BY PHONE
+@app.get("/storage-bookings/{storage_unit_id}")
+def api_get_storage_bookings(storage_unit_id: str):
+    try:
+        conn = psycopg2.connect(
+            host=DB_CONFIG["host"],
+            port=DB_CONFIG["port"],
+            database=DB_CONFIG["dbname"],
+            user=DB_CONFIG["user"],
+            password=DB_CONFIG["password"]
+        )
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+
+        query = """
+            SELECT 
+              sb.id,
+              sb.user_booked_id,
+              sb.storage_unit_id,
+              sb.booking_id,
+              sb.booking_type,
+              sb.booking_created_time,
+              sb.booking_end_time,
+              sb.status,
+              sb.storage_image_url,
+              sb.luggage_images,
+             
+              sb.amount,
+              sb.storage_latitude,
+              sb.storage_longitude,
+              sb.storage_booked_location,
+              sb.pickup_confirmed_at,
+              sb.storage_location_updated_at,
+              sb.user_remark,
+              
+              sb.last_updated_by,
+              sb.amount_updated_by,
+              sb.created_at,
+              sb.updated_at,
+              sb.payment_status,
+
+              -- User details
+              u.id as user_id,
+              u.full_name as user_full_name,
+              u.email as user_email,
+              u.phone as user_phone,
+
+              -- Storage unit details
+              su.id as storage_id,
+              su.title as storage_title,
+              su.description as storage_description,
+              su.address as storage_address,
+              su.city as storage_city,
+              su.state as storage_state,
+              su.pincode as storage_pincode,
+              su.latitude as storage_lat,
+              su.longitude as storage_lng,
+              
+
+              -- Addon details
+              COALESCE(
+        json_agg(
+            jsonb_build_object(
+                'addon_id', sua.id,
+                'name', sua.name,
+                'price', sua.base_price
+            )
+        ) FILTER (WHERE sua.id IS NOT NULL),
+        '[]'
+    ) AS addons
+
+            FROM storage_bookings_storagebooking sb
+            INNER JOIN users_user u ON sb.user_booked_id = u.id
+            LEFT JOIN storage_units_storageunit su ON sb.storage_unit_id = su.id
+            LEFT JOIN saathi_saathi s ON sb.assigned_saathi_id = s.id
+            LEFT JOIN storage_bookings_bookingaddon sbb 
+    ON (
+        sbb.booking_id = sb.id 
+        OR sbb.booking_str_id = sb.id::text   -- matching by string id
+    )
+
+LEFT JOIN storage_units_addon sua 
+    ON (
+        sua.id = sbb.addon_id
+        OR sbb.addon_str_id = sua.id::text      -- matching by addon string id
+    )
+            
+            WHERE sb.storage_unit_id = %s
+            GROUP BY 
+    sb.id, sb.user_booked_id, sb.storage_unit_id, sb.booking_id, sb.booking_type,
+    sb.booking_created_time, sb.booking_end_time, sb.status, sb.amount,
+    sb.storage_latitude, sb.storage_longitude, sb.storage_booked_location,
+    sb.pickup_confirmed_at, sb.storage_location_updated_at, sb.user_remark,
+    sb.last_updated_by, sb.amount_updated_by, sb.created_at, sb.updated_at,
+    
+    u.id, u.full_name, u.email, u.phone,
+
+    su.id, su.title, su.description, su.address, su.city, su.state,
+    su.pincode, su.latitude, su.longitude, su.rating
+
+            ORDER BY sb.created_at DESC
+        """
+
+        cur.execute(query, (storage_unit_id,))
+        data = cur.fetchall()
+
+         # SUMMARY QUERY
+        summary_query = """
+            SELECT 
+                COUNT(*) AS total_bookings,
+                COALESCE(SUM(CAST(sb.amount AS DECIMAL)), 0) AS total_amount,
+                COALESCE(SUM(
+                    CASE WHEN sb.payment_status = 'paid' THEN CAST(sb.amount AS DECIMAL) END
+                ), 0) AS total_paid_amount
+            FROM storage_bookings_storagebooking sb
+            WHERE sb.storage_unit_id = %s;
+        """
+
+        cur.execute(summary_query, (storage_unit_id,))
+        summary = cur.fetchone()
+
+        cur.close()
+        conn.close()
+
+        return {
+            "success": True,
+            "count": len(data),
+            "summary": summary,
+            "data": data
+        }
+
+    except Exception as e:
+        return {"success": False, "message": str(e)}
+
+
+@app.get("/storage-units/")
+def api_get_storages():
+    try:
+        conn = psycopg2.connect(
+            host=DB_CONFIG["host"],
+            port=DB_CONFIG["port"],
+            database=DB_CONFIG["dbname"],
+            user=DB_CONFIG["user"],
+            password=DB_CONFIG["password"]
+        )
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+
+        query = """
+            select sus.id, sus.title from storage_units_storageunit sus 
+        """
+
+    
+        cur.execute(query)
+        summary = cur.fetchall()
+
+        cur.close()
+        conn.close()
+
+        return {
+            "success": True,
+            "data": summary
+        }
+
+    except Exception as e:
+        return {"success": False, "message": str(e)}
