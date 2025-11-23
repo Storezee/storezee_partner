@@ -69,6 +69,10 @@ export interface Booking {
   user_full_name?: string;
   user_email?: string;
   user_phone?: string;
+  user_identification_number?: string;
+  user_document_id?: string;
+  user_document_original_name?: string;
+  user_document_url?: string;
   storage_id?: string;
   storage_title?: string;
   storage_description?: string;

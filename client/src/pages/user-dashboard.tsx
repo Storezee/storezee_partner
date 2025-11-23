@@ -66,7 +66,7 @@ export default function UserDashboard() {
                 <Package className="h-5 w-5 text-primary-foreground" />
               </div>
               <div>
-                <h1 className="text-lg font-semibold">Booking Management</h1>
+                <h1 className="text-lg font-semibold">Booking List</h1>
                 <p className="text-xs text-muted-foreground">My Bookings</p>
               </div>
             </div>

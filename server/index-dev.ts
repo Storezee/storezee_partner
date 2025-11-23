@@ -9,6 +9,9 @@ import { nanoid } from "nanoid";
 import { type Server } from "node:http";
 import { type Express, Request, Response, NextFunction } from "express";
 import { createServer as createViteServer, createLogger } from "vite";
+import dotenv from "dotenv";
+dotenv.config();
+console.log("📦 Loaded env:", process.env.DB_HOST);
 
 import viteConfig from "../vite.config";
 import runApp from "./app";

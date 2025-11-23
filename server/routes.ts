@@ -1,3 +1,4 @@
+import 'dotenv/config'; 
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import multer from "multer";
@@ -5,21 +6,80 @@ import { Pool } from "pg";
 import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "crypto";
-import dotenv from "dotenv";
-dotenv.config();
+
+import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-
-const pool = new Pool({
-  host: process.env.host,
-  port: parseInt(process.env.port || "5533"),
-  database: process.env.database,
-  user: process.env.user,
-  password: process.env.password,
+console.log("Loaded AWS creds:", {
+  region: process.env.AWS_S3_REGION_NAME,
+  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  bucket: process.env.AWS_STORAGE_BUCKET_NAME,
 });
 
+const s3 = new S3Client({
+  region: process.env.AWS_S3_REGION_NAME,
+  credentials: {
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+  },
+});
+
+const BUCKET_NAME = process.env.AWS_STORAGE_BUCKET_NAME!;
+
+async function uploadToS3(buffer: Buffer, key: string, contentType: string) {
+  const command = new PutObjectCommand({
+    Bucket: BUCKET_NAME,
+    Key: key,
+    Body: buffer,
+    ContentType: contentType,
+    // ACL: "public-read", // make it publicly accessible
+  });
+
+  await s3.send(command);
+
+  return `https://${BUCKET_NAME}.s3.${process.env.AWS_S3_REGION_NAME}.amazonaws.com/${key}`;
+}
+
+let pool: Pool;
+export function getPool() {
+  if (!pool) {
+    pool = new Pool({
+      host: process.env.DB_HOST,
+      port: parseInt(process.env.DB_PORT || "5433"),
+      database: process.env.DB_NAME,
+      user: process.env.DB_USER,
+      password: process.env.DB_PASSWORD,
+    });
+    console.log("📦 Database Pool Configured:", {
+      host: process.env.DB_HOST,
+      port: process.env.DB_PORT,
+      database: process.env.DB_NAME,
+      user: process.env.DB_USER,
+    });
+  }
+  return pool;
+}
+
+
+// const pool = new Pool({
+//   host: process.env.DB_HOST,
+//   port: parseInt(process.env.DB_PORT || "5533"),
+//   database: process.env.DB_NAME,
+//   user: process.env.DB_USER,
+//   password: process.env.DB_PASSWORD,
+// });
+
+// console.log("📦 Database Pool Configured:", {
+//   host: process.env.DB_HOST,
+//   port: process.env.DB_PORT,
+//   database: process.env.DB_NAME,
+//   user: process.env.DB_USER,
+// });
+
 export async function registerRoutes(app: Express): Promise<Server> {
+  const pool = getPool();
   // GET user role (kept from your earlier version)
   app.get("/api/user-role/:phone", async (req, res) => {
     try {
@@ -51,7 +111,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // POST create-everything -> ported from your Python implementation
   app.post(
-    "/api/create-everything",
+  "/api/create-everything",
     upload.fields([
       { name: "file", maxCount: 1 },
       { name: "luggage_pic", maxCount: 10 },
@@ -73,30 +133,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
           luggage_time = "6",
           addons = "",
           identification_number = "",
-          amount = "0"   
+          amount = "0",
         } = req.body as Record<string, string>;
 
-        // Multer files are in memory
         const files = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
 
         await client.query("BEGIN");
 
         const now = new Date();
+        const user_id = randomUUID();
 
         // 1) Create user
-        const user_id = randomUUID();
         await client.query(
           `INSERT INTO users_user (
-                password, last_login, is_superuser, id, created_at, updated_at,
-                full_name, email, phone, role, latitude, longitude, is_active,
-                is_staff, date_joined, profile_picture, is_verified, otp,
-                otp_generated_time, city_name, identification_number
-            )
-            VALUES (
-                $1,$2,$3,$4,$5,$6,
-                $7,$8,$9,$10,$11,$12,$13,
-                $14,$15,$16,$17,$18,$19,$20,$21
-            )`,
+            password, last_login, is_superuser, id, created_at, updated_at,
+            full_name, email, phone, role, latitude, longitude, is_active,
+            is_staff, date_joined, profile_picture, is_verified, otp,
+            otp_generated_time, city_name, identification_number
+          ) VALUES (
+            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21
+          )`,
           [
             "", // password
             null, // last_login
@@ -122,62 +178,71 @@ export async function registerRoutes(app: Express): Promise<Server> {
           ]
         );
 
-        // 2) Save uploaded files to uploads/ (document and luggage)
-        // Ensure uploads directory exists
-        const uploadsRoot = path.resolve(process.cwd(), "uploads");
-        if (!fs.existsSync(uploadsRoot)) fs.mkdirSync(uploadsRoot, { recursive: true });
-
-        // Save single document file if present (field name 'file')
-        // (Note: in Python code this was commented out; leaving saved doc capability)
+        // 2) Upload user document
+        let document_url = "";
+        console.log("Received files:", files);
         if (files?.file && files.file[0]) {
           const f = files.file[0];
           const ext = f.originalname.split(".").pop() || "bin";
           const docKey = `documents/${user_id}/${randomUUID()}.${ext}`;
-          const docPath = path.join(uploadsRoot, docKey);
-          fs.mkdirSync(path.dirname(docPath), { recursive: true });
-          fs.writeFileSync(docPath, f.buffer);
-          // optional: you can insert doc record into users_userdocument table if you want
+
+          try {
+            document_url = await uploadToS3(f.buffer, docKey, f.mimetype);
+            console.log("✅ Document uploaded:", document_url);
+          } catch (err) {
+            console.error("❌ Failed to upload document:", err);
+            document_url = ""; // fallback
+          }
         }
 
-        // Save luggage pics
+        const docIdResult = await client.query(`SELECT nextval('users_userdocument_id_seq') as id`);
+        const docId = docIdResult.rows[0].id;
+
+        await client.query(
+          `INSERT INTO public.users_userdocument
+            (id, original_name, imghippo_url, response_json, created_at, user_id)
+            VALUES ($1,$2,$3,$4,$5,$6)`,
+          [
+            docId,
+            files?.file && files.file[0] ? files.file[0].originalname : "",
+            document_url,
+            JSON.stringify({}), // <- always valid JSON
+            now,
+            user_id,
+          ]
+        );
+
+        // 3) Upload luggage pics
         const luggage_urls: string[] = [];
         if (files?.luggage_pic && files.luggage_pic.length > 0) {
           for (const pic of files.luggage_pic) {
             const ext = pic.originalname.split(".").pop() || "jpg";
             const imgKey = `luggage/${user_id}/${randomUUID()}.${ext}`;
-            const imgPath = path.join(uploadsRoot, imgKey);
-            fs.mkdirSync(path.dirname(imgPath), { recursive: true });
-            fs.writeFileSync(imgPath, pic.buffer);
-            luggage_urls.push(`/static/${imgKey}`);
+            const imgUrl = await uploadToS3(pic.buffer, imgKey, pic.mimetype);
+            luggage_urls.push(imgUrl);
           }
         }
+        const luggage_json = JSON.stringify(luggage_urls); // <- valid JSON
 
-        const luggage_json = JSON.stringify(luggage_urls);
-
-        // 3) Create booking
+        // 4) Create booking
         const booking_no = "BK" + randomUUID().replace(/-/g, "").slice(0, 6).toUpperCase();
         const start_dt = booking_created_time ? new Date(booking_created_time) : new Date();
         const booking_end = new Date(start_dt.getTime() + Number(luggage_time) * 60 * 60 * 1000);
         const booking_str_id = randomUUID();
-        const finalAmount = amount ? Number(amount) : 0;
+        const finalAmount = Number(amount || 0);
 
         const insertBookingText = `
           INSERT INTO public.storage_bookings_storagebooking
           (id, created_at, updated_at, booking_id, booking_type, booking_created_time, booking_end_time, status, storage_image_url, storage_weight, is_active,
-           storage_latitude, storage_longitude, storage_booked_location, user_remark, assigned_saathi_id, storage_unit_id,
-           user_booked_id, amount, luggage_rakshak_id, storage_location_updated_at, delivered_to_rakshak_at, luggage_images, pickup_confirmed_at,
-           return_address, return_estimated_amount, return_lat, return_lng, return_preferred_time, return_requested_at, last_updated_by, amount_updated_by, payment_status
-          )
+          storage_latitude, storage_longitude, storage_booked_location, user_remark, assigned_saathi_id, storage_unit_id,
+          user_booked_id, amount, luggage_rakshak_id, storage_location_updated_at, delivered_to_rakshak_at, luggage_images, pickup_confirmed_at,
+          return_address, return_estimated_amount, return_lat, return_lng, return_preferred_time, return_requested_at, last_updated_by, amount_updated_by, payment_status)
           VALUES (
-  $1,$2,$3,$4,$5,
-  $6,$7,$8,$9,$10,
-  $11,$12,$13,$14,
-  $15,$16,$17,$18,
-  $19,$20,$21,$22,$23,
-  $24,$25,$26,$27,$28,
-  $29,$30,$31,$32, $33
-)
-
+            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
+            $11,$12,$13,$14,$15,$16,$17,$18,
+            $19,$20,$21,$22,$23,$24,
+            $25,$26,$27,$28,$29,$30,$31,$32,$33
+          )
           RETURNING id;
         `;
 
@@ -200,11 +265,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           null,
           storage_unit_id,
           user_id,
-          finalAmount, // amount (hardcoded like in your Python)
+          finalAmount,
           null,
           null,
           null,
-          luggage_json,
+          luggage_json, // <- valid JSON
           null,
           null,
           null,
@@ -217,27 +282,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           "pending"
         ];
 
-        // const bookingResult = await client.query(insertBookingText, insertBookingValues);
-        const bookingResult = await (async () => {
-          console.log("--------------------------------------------------");
-          console.log("🔍 DEBUGGING BOOKING INSERT");
-
-          // Count placeholders ($1, $2, etc.)
-          const placeholderCount =
-            insertBookingText.match(/\$\d+/g)?.length ?? 0;
-
-          console.log("📌 Placeholder Count:", placeholderCount);
-          console.log("📌 insertBookingValues Count:", insertBookingValues.length);
-
-          console.log("\n📄 SQL Query:\n", insertBookingText);
-          console.log("\n📦 VALUES:\n", insertBookingValues);
-          console.log("--------------------------------------------------");
-
-          return await client.query(insertBookingText, insertBookingValues);
-        })();
+        const bookingResult = await client.query(insertBookingText, insertBookingValues);
         const booking_id = bookingResult.rows[0]?.id;
 
-        // 4) Addons: if provided as comma-separated string
+        // 5) Addons
         if (addons && addons.toString().trim()) {
           const addList = addons.toString().split(",").map((s) => s.trim()).filter(Boolean);
           for (const addonStr of addList) {
@@ -272,6 +320,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   );
 
+
   // GET user bookings by phone (ported SQL)
   app.get("/api/user-bookings/:phone", async (req, res) => {
     const { phone } = req.params;
@@ -289,6 +338,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
               sb.booking_created_time,
               sb.booking_end_time,
               sb.status,
+              sb.storage_image_url,
+              sb.luggage_images,
              
               sb.amount,
               sb.storage_latitude,
@@ -309,6 +360,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
               u.full_name as user_full_name,
               u.email as user_email,
               u.phone as user_phone,
+              u.identification_number as user_identification_number,
+
+              -- User document details
+              ud.id as user_document_id,
+              ud.original_name as user_document_original_name,
+              ud.imghippo_url as user_document_url,
 
               -- Storage unit details
               su.id as storage_id,
@@ -336,6 +393,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
             FROM storage_bookings_storagebooking sb
             INNER JOIN users_user u ON sb.user_booked_id = u.id
+            LEFT JOIN users_userdocument ud ON ud.user_id = u.id
             LEFT JOIN storage_units_storageunit su ON sb.storage_unit_id = su.id
             LEFT JOIN saathi_saathi s ON sb.assigned_saathi_id = s.id
             LEFT JOIN storage_bookings_bookingaddon sbb 
@@ -358,7 +416,7 @@ LEFT JOIN storage_units_addon sua
     sb.pickup_confirmed_at, sb.storage_location_updated_at, sb.user_remark,
     sb.last_updated_by, sb.amount_updated_by, sb.created_at, sb.updated_at,
     
-    u.id, u.full_name, u.email, u.phone,
+    u.id, u.full_name, u.email, u.phone,ud.id,
 
     su.id, su.title, su.description, su.address, su.city, su.state,
     su.pincode, su.latitude, su.longitude, su.rating
@@ -421,6 +479,13 @@ LEFT JOIN storage_units_addon sua
               u.full_name as user_full_name,
               u.email as user_email,
               u.phone as user_phone,
+              u.identification_number as user_identification_number,
+
+              -- User document details
+              ud.id as user_document_id,
+              ud.original_name as user_document_original_name,
+              ud.imghippo_url as user_document_url,
+
 
               -- Storage unit details
               su.id as storage_id,
@@ -448,6 +513,7 @@ LEFT JOIN storage_units_addon sua
 
             FROM storage_bookings_storagebooking sb
             INNER JOIN users_user u ON sb.user_booked_id = u.id
+            LEFT JOIN users_userdocument ud ON ud.user_id = u.id
             LEFT JOIN storage_units_storageunit su ON sb.storage_unit_id = su.id
             LEFT JOIN saathi_saathi s ON sb.assigned_saathi_id = s.id
             LEFT JOIN storage_bookings_bookingaddon sbb 
@@ -470,7 +536,7 @@ LEFT JOIN storage_units_addon sua
     sb.pickup_confirmed_at, sb.storage_location_updated_at, sb.user_remark,
     sb.last_updated_by, sb.amount_updated_by, sb.created_at, sb.updated_at,
     
-    u.id, u.full_name, u.email, u.phone,
+    u.id, u.full_name, u.email, u.phone,ud.id,
 
     su.id, su.title, su.description, su.address, su.city, su.state,
     su.pincode, su.latitude, su.longitude, su.rating

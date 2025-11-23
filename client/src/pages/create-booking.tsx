@@ -124,7 +124,7 @@ export default function CreateBooking() {
       formData.append('amount', finalAmount.toString());
 
       if (documentFile) {
-        formData.append('file', "");
+        formData.append('file', documentFile);
       }
 
       luggageFiles.forEach((file) => {
@@ -159,14 +159,14 @@ export default function CreateBooking() {
   });
 
   const onSubmit = (data: CreateBookingInput) => {
-    // if (!documentFile) {
-    //   toast({
-    //     title: "Document Required",
-    //     description: "Please upload a document",
-    //     variant: "destructive",
-    //   });
-    //   return;
-    // }
+    if (!documentFile) {
+      toast({
+        title: "Document Required",
+        description: "Please upload a document",
+        variant: "destructive",
+      });
+      return;
+    }
 
     createBookingMutation.mutate(data);
   };
@@ -261,6 +261,7 @@ export default function CreateBooking() {
                             type="tel" 
                             placeholder="1234567890" 
                             className="font-mono"
+                            maxLength={10}   
                             {...field} 
                             data-testid="input-phone" 
                           />
@@ -474,7 +475,7 @@ export default function CreateBooking() {
                 />
 
                 <div className="space-y-4">
-                  {/* <div>
+                  <div>
                     <Label htmlFor="document">Document Upload *</Label>
                     <div className="mt-2">
                       <label
@@ -504,7 +505,7 @@ export default function CreateBooking() {
                         />
                       </label>
                     </div>
-                  </div> */}
+                  </div> 
 
                   <div>
                     <Label htmlFor="luggage">Luggage Pictures</Label>

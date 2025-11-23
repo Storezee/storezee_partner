@@ -1,22 +1,24 @@
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { useState } from "react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { StatusBadge } from "./status-badge";
 import { Badge } from "@/components/ui/badge";
 import type { Booking } from "@shared/schema";
 import { format } from "date-fns";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Eye, X } from "lucide-react";
+import { Dialog, DialogContent, DialogTrigger, DialogClose } from "@/components/ui/dialog";
+
 
 interface BookingTableProps {
   bookings: Booking[];
 }
 
 export function BookingTable({ bookings }: BookingTableProps) {
+  // ✅ useState must be inside component
+  const [imageSrc, setImageSrc] = useState<string | null>(null);
+
+  const closeModal = () => setImageSrc(null);
+
   const formatDate = (dateString: string) => {
     try {
       return format(new Date(dateString), "PP");
@@ -42,66 +44,58 @@ export function BookingTable({ bookings }: BookingTableProps) {
   }
 
   return (
-    <div className="border rounded-lg">
+    <div className="border rounded-lg relative">
       <ScrollArea className="h-[600px]">
         <Table>
           <TableHeader className="sticky top-0 bg-card z-10">
             <TableRow>
-              <TableHead className="font-semibold">Booking ID</TableHead>
-              <TableHead className="font-semibold">Customer</TableHead>
-              <TableHead className="font-semibold">Phone</TableHead>
-              <TableHead className="font-semibold">Location</TableHead>
-              <TableHead className="font-semibold">Start Time</TableHead>
-              <TableHead className="font-semibold">End Time</TableHead>
-              <TableHead className="font-semibold text-right">Amount</TableHead>
-              <TableHead className="font-semibold">Status</TableHead>
-              <TableHead className="font-semibold">Payment</TableHead>
+              <TableHead>Booking ID</TableHead>
+              <TableHead>Customer</TableHead>
+              <TableHead>Phone</TableHead>
+              <TableHead>Location</TableHead>
+              <TableHead>Start Time</TableHead>
+              <TableHead>End Time</TableHead>
+              <TableHead className="text-right">Amount</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Payment</TableHead>
+              <TableHead>Document</TableHead>
+              <TableHead>Stored Item</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {bookings.map((booking, index) => (
-              <TableRow 
-                key={booking.id} 
-                className="hover-elevate"
-                data-testid={`row-booking-${index}`}
-              >
-                <TableCell className="font-mono font-medium" data-testid={`text-booking-id-${index}`}>
-                  {booking.booking_id}
-                </TableCell>
-                <TableCell data-testid={`text-customer-name-${index}`}>
-                  {booking.user_full_name || 'N/A'}
-                </TableCell>
-                <TableCell className="font-mono text-sm" data-testid={`text-customer-phone-${index}`}>
-                  {booking.user_phone || 'N/A'}
-                </TableCell>
-                <TableCell className="max-w-[200px] truncate" data-testid={`text-location-${index}`}>
-                  {booking.storage_booked_location || 'N/A'}
-                </TableCell>
-                <TableCell>
-                  <div className="space-y-0.5">
-                    <div className="text-sm">{formatDate(booking.booking_created_time)}</div>
-                    <div className="text-xs text-muted-foreground">{formatTime(booking.booking_created_time)}</div>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <div className="space-y-0.5">
-                    <div className="text-sm">{formatDate(booking.booking_end_time)}</div>
-                    <div className="text-xs text-muted-foreground">{formatTime(booking.booking_end_time)}</div>
-                  </div>
-                </TableCell>
-                <TableCell className="text-right font-mono font-semibold" data-testid={`text-booking-amount-${index}`}>
-                  ₹{booking.amount}
-                </TableCell>
-                <TableCell>
-                  <StatusBadge status={booking.status} />
-                </TableCell>
+              <TableRow key={booking.id}>
+                <TableCell>{booking.booking_id}</TableCell>
+                <TableCell>{booking.user_full_name || 'N/A'}</TableCell>
+                <TableCell>{booking.user_phone || 'N/A'}</TableCell>
+                <TableCell>{booking.storage_booked_location || 'N/A'}</TableCell>
+                <TableCell>{formatDate(booking.booking_created_time)}</TableCell>
+                <TableCell>{formatDate(booking.booking_end_time)}</TableCell>
+                <TableCell className="text-right">₹{booking.amount}</TableCell>
+                <TableCell><StatusBadge status={booking.status} /></TableCell>
                 <TableCell>
                   {booking.payment_status ? (
                     <Badge variant={booking.payment_status === 'paid' ? 'default' : 'secondary'}>
                       {booking.payment_status}
                     </Badge>
+                  ) : '-'}
+                </TableCell>
+                <TableCell>
+                  {booking.user_document_url ? (
+                    <button onClick={() => setImageSrc(booking.user_document_url!)} aria-label="View Document">
+                      <Eye className="w-5 h-5" />
+                    </button>
                   ) : (
-                    <span className="text-sm text-muted-foreground">-</span>
+                    "-"
+                  )}
+                </TableCell>
+                  <TableCell>
+                  {booking.storage_image_url ? (
+                    <button onClick={() => setImageSrc(booking.storage_image_url!)} aria-label="View Item">
+                      <Eye className="w-5 h-5" />
+                    </button>
+                  ) : (
+                    "-"
                   )}
                 </TableCell>
               </TableRow>
@@ -109,6 +103,16 @@ export function BookingTable({ bookings }: BookingTableProps) {
           </TableBody>
         </Table>
       </ScrollArea>
+
+      {/* Modal */}
+       {imageSrc && (
+        <Dialog open={!!imageSrc} onOpenChange={closeModal}>
+          <DialogContent>
+            <DialogClose />
+            <img src={imageSrc} alt="Document" className="max-w-full max-h-[80vh]" />
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

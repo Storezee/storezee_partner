@@ -16,6 +16,8 @@ interface AppSidebarProps {
   onCreateBooking?: () => void;
 }
 
+import StorezeeLogo from '../../../client/public/storezee_logo.png';
+
 export function AppSidebar({ role, onCreateBooking }: AppSidebarProps) {
   const isSaathi = role === 'saathi';
 
@@ -23,11 +25,15 @@ export function AppSidebar({ role, onCreateBooking }: AppSidebarProps) {
     <Sidebar>
       <SidebarHeader className="border-b p-4">
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sidebar-primary">
-            <Package className="h-4 w-4 text-sidebar-primary-foreground" />
+          <div className="flex items-center justify-center rounded-lg">
+            <img
+              src={StorezeeLogo}
+              alt="Storezee Logo"
+              className="h-12 w-12"
+            />
           </div>
           <div>
-            <p className="text-sm font-semibold">BMS</p>
+            <p className="text-sm font-semibold">Storezee</p>
             <p className="text-xs text-muted-foreground">
               {isSaathi ? 'Saathi' : 'Partner'} Portal
             </p>

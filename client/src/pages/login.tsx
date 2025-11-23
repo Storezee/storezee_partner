@@ -9,6 +9,8 @@ import { api } from "@/lib/api";
 import { Package, Loader2, AlertCircle } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
+import StorezeeLogo from '../../../client/public/storezee_logo.png';
+
 export default function Login() {
   const [phone, setPhone] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -76,10 +78,14 @@ export default function Login() {
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-2 text-center">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-lg bg-primary">
-            <Package className="h-6 w-6 text-primary-foreground" />
+          <div className="mx-auto mb-4 flex items-center justify-center rounded-lg">
+            <img
+              src={StorezeeLogo}
+              alt="Storezee Logo"
+              className="h-12 w-12"
+            />
           </div>
-          <CardTitle className="text-2xl font-semibold">Booking Management System</CardTitle>
+          <CardTitle className="text-2xl font-semibold">Storezee Booking Portal</CardTitle>
           <CardDescription>
             Enter your mobile number to access your dashboard
           </CardDescription>
