@@ -1,0 +1,40 @@
+# -----------------------------
+# 1) Builder
+# -----------------------------
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm install
+
+COPY . .
+
+# Build frontend + backend
+RUN npm run build
+
+# Move server/public → dist/public (for index-prod)
+RUN mkdir -p dist/public && cp -r server/public/* dist/public/
+
+
+# -----------------------------
+# 2) Runner
+# -----------------------------
+FROM node:20-alpine AS runner
+
+WORKDIR /app
+
+# Copy backend dist (contains index.js)
+COPY --from=builder /app/dist ./dist
+
+# Copy server files (needed by backend)
+COPY --from=builder /app/server ./server
+
+COPY package*.json ./
+
+# Install only production deps
+RUN npm install --omit=dev
+
+EXPOSE 5000
+
+CMD ["npm", "start"]
