@@ -236,12 +236,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           (id, created_at, updated_at, booking_id, booking_type, booking_created_time, booking_end_time, status, storage_image_url, storage_weight, is_active,
           storage_latitude, storage_longitude, storage_booked_location, user_remark, assigned_saathi_id, storage_unit_id,
           user_booked_id, amount, luggage_rakshak_id, storage_location_updated_at, delivered_to_rakshak_at, luggage_images, pickup_confirmed_at,
-          return_address, return_estimated_amount, return_lat, return_lng, return_preferred_time, return_requested_at, last_updated_by, amount_updated_by, payment_status)
+          return_address, return_estimated_amount, return_lat, return_lng, return_preferred_time, return_requested_at, last_updated_by, amount_updated_by, payment_status, ending_soon_notified, late_pickup_notified,booked_time)
           VALUES (
             $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
             $11,$12,$13,$14,$15,$16,$17,$18,
             $19,$20,$21,$22,$23,$24,
-            $25,$26,$27,$28,$29,$30,$31,$32,$33
+            $25,$26,$27,$28,$29,$30,$31,$32,$33, $34, $35, $36
           )
           RETURNING id;
         `;
@@ -279,7 +279,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           null,
           "System",
           null,
-          "pending"
+          "pending",
+          false,
+          false,
+          luggage_time
         ];
 
         const bookingResult = await client.query(insertBookingText, insertBookingValues);
