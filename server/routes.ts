@@ -8,6 +8,8 @@ import path from "node:path";
 import { randomUUID } from "crypto";
 
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import nodemailer from "nodemailer"; // ✅ added
+
 
 const upload = multer({ storage: multer.memoryStorage() });
 
@@ -41,6 +43,131 @@ async function uploadToS3(buffer: Buffer, key: string, contentType: string) {
 
   return `https://${BUCKET_NAME}.s3.${process.env.AWS_S3_REGION_NAME}.amazonaws.com/${key}`;
 }
+
+// -----------------------
+// HELPER — FORMAT TIME
+// -----------------------
+function formatBookingTime(date: Date) {
+  return date.toLocaleString("en-IN", {
+    timeZone: "Asia/Kolkata",
+  });
+}
+
+// -----------------------
+// TYPE FOR SEND BOOKING MAIL ARGS
+// -----------------------
+type SendBookingMailArgs = {
+  name: string;
+  phone: string;
+  email: string;
+  amount: number;
+  booking_time: string;
+  booking_id: string;
+  smtp_server: string;
+  port: string | number;
+  username: string;
+  password: string;
+};
+
+// -----------------------
+// SEND BOOKING EMAIL
+// -----------------------
+export const sendBookingMail = async ({
+  name,
+  phone,
+  email,
+  amount,
+  booking_time,
+  booking_id,
+  smtp_server,
+  port,
+  username,
+  password,
+}: SendBookingMailArgs) => {          // ✅ typed, fixes all 7031 errors
+  const transporter = nodemailer.createTransport({
+    host: smtp_server,
+    port: Number(port),
+    secure: Number(port) === 465,
+    auth: { user: username, pass: password },
+  });
+
+  const body = `
+  <!DOCTYPE html>
+  <html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Booking Confirmation</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        background-color: #f4f6f8;
+        padding: 20px;
+      }
+
+      .container {
+        max-width: 650px;
+        margin: auto;
+        background: #ffffff;
+        border-radius: 12px;
+        padding: 25px;
+        box-shadow: rgba(0,0,0,0.1) 0 4px 12px;
+      }
+
+      h2 {
+        color: #1a73e8;
+        font-size: 24px;
+        margin-bottom: 10px;
+      }
+
+      p {
+        font-size: 16px;
+        color: #444;
+        line-height: 1.6;
+      }
+
+      .footer {
+        margin-top: 30px;
+        text-align: center;
+        font-size: 13px;
+        color: #777;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="container">
+      <h2>Your Booking is Confirmed 🎉</h2>
+
+      <p>Dear <strong>${name}</strong>,</p>
+
+      <p>Thank you for booking with <strong>Storezee</strong>. Here are your booking details:</p>
+
+      <p><strong>Booking ID:</strong> ${booking_id}</p>
+      <p><strong>Customer Phone:</strong> ${phone}</p>
+      <p><strong>Email:</strong> ${email}</p>
+      <p><strong>Amount Paid:</strong> ₹${amount}</p>
+      <p><strong>Booking Time:</strong> ${booking_time}</p>
+
+      <p>
+        If you have any questions, reply to this email anytime.
+      </p>
+
+      <div class="footer">
+        Storezee © ${new Date().getFullYear()}
+      </div>
+    </div>
+  </body>
+  </html>
+  `;
+
+  await transporter.sendMail({
+    from: username,
+    to: email,
+    subject: `Storezee Booking Confirmed: ${booking_id}`,
+    html: body,
+  });
+};
+
 
 let pool: Pool;
 export function getPool() {
@@ -301,6 +428,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
             );
           }
         }
+
+        // ✅ send email AFTER booking created
+        await sendBookingMail({
+          name: full_name,
+          phone,
+          email,
+          amount: Number(amount),
+          booking_time: formatBookingTime(start_dt),
+          booking_id: booking_no,
+          smtp_server: process.env.SMTP_SERVER!,
+          port: process.env.SMTP_PORT!,
+          username: process.env.SMTP_EMAIL!,
+          password: process.env.SMTP_PASS!,
+        });
 
         await client.query("COMMIT");
 
@@ -598,7 +739,7 @@ LEFT JOIN storage_units_addon sua
     }
   });
 
-  // GET storage units
+  // GET addons
   app.get("/api/addons", async (_req, res) => {
     console.log("📢 /api/addons route LOADED");
 
@@ -631,7 +772,6 @@ LEFT JOIN storage_units_addon sua
       client?.release();
     }
   });
-
 
   // create and return a http server for runApp() to listen on
   const httpServer = createServer(app);
