@@ -72,11 +72,11 @@ export default function CreateBooking() {
 
 
   const ADDONS = [
-    { id: "6ba3a764-5194-4b3f-a409-f9c4b516afac", name: "Earphones/Headphones", price: 20 },
-    { id: "811dfa01-c445-4cfa-8ae1-87f85f8ed037", name: "Helmets", price: 15 },
+    { id: "6ba3a764-5194-4b3f-a409-f9c4b516afac", name: "Accessories", price: 20 },
+    // { id: "811dfa01-c445-4cfa-8ae1-87f85f8ed037", name: "Helmets", price: 15 },
     { id: "67f56785-cbb9-417e-8ea3-33a28ca8ba2a", name: "Luggage/Bagpack", price: 50 },
-    { id: "0d651b29-1691-4382-b2de-aa517df2ebe9", name: "Camera/Electronic Item", price: 30 },
-    { id: "0a2ea28c-12dd-4554-b2eb-0877537325d3", name: "Earphones/Headphones", price: 10 },
+    // { id: "0d651b29-1691-4382-b2de-aa517df2ebe9", name: "Camera/Electronic Item", price: 30 },
+    // { id: "0a2ea28c-12dd-4554-b2eb-0877537325d3", name: "Earphones/Headphones", price: 10 },
   ];
   
 
@@ -93,7 +93,7 @@ export default function CreateBooking() {
       latitude: 0,
       longitude: 0,
       user_remark: "",
-      luggage_time: 6,
+      luggage_time: 8,
       addons: "",
       identification_number: "",
     },
@@ -106,7 +106,7 @@ export default function CreateBooking() {
       const addonPrice = selectedAddon ? selectedAddon.price : 0;
 
       // 2. Calculate total amount
-      const finalAmount = addonPrice * data.luggage_time;
+      const finalAmount = addonPrice;
       const formData = new FormData();
       
       formData.append('full_name', data.full_name);
